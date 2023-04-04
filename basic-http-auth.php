@@ -65,7 +65,7 @@ function http_auth_protect() {
 	// Check if the user's IP is within the allowed IP ranges.
 	$user_ip = filter_var( $_SERVER['REMOTE_ADDR'] ?? false, FILTER_VALIDATE_IP ); // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REMOTE_ADDR__, WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders
 
-	if ( $user_ip && \emrikol\basic_http_auth\is_ip_in_ranges( $user_ip, $allowed_ranges ) ) {
+	if ( \emrikol\basic_http_auth\is_ip_in_ranges( $user_ip, $allowed_ranges ) ) {
 		return;
 	}
 
