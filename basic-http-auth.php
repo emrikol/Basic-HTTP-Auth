@@ -9,6 +9,34 @@
 namespace emrikol\basic_http_auth;
 
 /**
+ * Checks if the given IP address is within any of the specified IP ranges.
+ *
+ * This function takes an IP address and an array of IP ranges in CIDR notation.
+ * It returns true if the IP address is within any of the specified ranges, and
+ * false otherwise.
+ *
+ * @param string $ip     The IP address to check.
+ * @param array  $ranges An array of IP ranges in CIDR notation.
+ *
+ * @return bool True if the IP address is within any of the ranges, false otherwise.
+ */
+function is_ip_in_ranges( $ip, $ranges ) {
+	$long_ip = ip2long( $ip );
+
+	foreach ( $ranges as $range ) {
+		list($subnet, $bits) = explode( '/', $range );
+		$subnet_long         = ip2long( $subnet );
+		$mask                = -1 << ( 32 - $bits );
+
+		if ( ( $long_ip & $mask ) == ( $subnet_long & $mask ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
  * Protects the WordPress site using HTTP authentication and cookies.
  *
  * This function checks the user's cookies and HTTP authentication credentials against the
@@ -22,7 +50,25 @@ namespace emrikol\basic_http_auth;
  *
  * @return void
  */
-function http_auth_protect(): void {
+function http_auth_protect() {
+	// Allow Jetpack IPs: https://jetpack.com/support/how-to-add-jetpack-ips-allowlist/ may need updated in the future.
+	$allowed_ranges = array(
+		'122.248.245.244/32',
+		'54.217.201.243/32',
+		'54.232.116.4/32',
+		'192.0.80.0/20',
+		'192.0.96.0/20',
+		'192.0.112.0/20',
+		'195.234.108.0/22',
+	);
+
+	// Check if the user's IP is within the allowed IP ranges.
+	$user_ip = filter_var( $_SERVER['REMOTE_ADDR'] ?? false, FILTER_VALIDATE_IP ); // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REMOTE_ADDR__, WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders
+
+	if ( $user_ip && \emrikol\basic_http_auth\is_ip_in_ranges( $user_ip, $allowed_ranges ) ) {
+		return;
+	}
+
 	$credentials  = get_option( 'http_auth_credentials', '' );
 	$credentials  = explode( PHP_EOL, $credentials );
 	$cookie_name  = 'http_auth_cookie';
@@ -72,7 +118,7 @@ add_action( 'wp', '\emrikol\basic_http_auth\http_auth_protect' );
  *
  * @return void
  */
-function authenticate(): void {
+function authenticate() {
 	header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
 	header( 'HTTP/1.0 401 Unauthorized' );
 	echo 'Access denied';
@@ -88,7 +134,7 @@ function authenticate(): void {
  *
  * @return void
  */
-function http_auth_settings_menu(): void {
+function http_auth_settings_menu() {
 	add_options_page( 'HTTP Authentication Settings', 'HTTP Authentication', 'manage_options', 'http-auth-settings', '\emrikol\basic_http_auth\http_auth_settings_page' );
 }
 add_action( 'admin_menu', '\emrikol\basic_http_auth\http_auth_settings_menu' );
@@ -102,7 +148,7 @@ add_action( 'admin_menu', '\emrikol\basic_http_auth\http_auth_settings_menu' );
  *
  * @return void
  */
-function http_auth_settings_page(): void {
+function http_auth_settings_page() {
 	?>
 	<div class="wrap">
 		<h1>HTTP Authentication Settings</h1>
@@ -141,7 +187,7 @@ function http_auth_settings_page(): void {
  *
  * @return void
  */
-function http_auth_register_settings(): void {
+function http_auth_register_settings() {
 	register_setting( 'http-auth-settings', 'http_auth_cookie_days', 'intval' );
 	register_setting( 'http-auth-settings', 'http_auth_credentials', 'sanitize_textarea_field' );
 }
