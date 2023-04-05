@@ -89,7 +89,8 @@ function http_auth_protect() {
 	if ( ! $cookie_valid ) {
 		// phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.BasicAuthentication
 		if ( ! isset( $_SERVER['PHP_AUTH_USER'] ) || ! isset( $_SERVER['PHP_AUTH_PW'] ) ) {
-			authenticate();
+			add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
+			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure' );
 		} else {
 			foreach ( $credentials as $credential ) {
 				list($user, $pass) = explode( ',', $credential );
@@ -106,11 +107,12 @@ function http_auth_protect() {
 		}
 
 		if ( ! $authenticated ) {
-			authenticate();
+			add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
+			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure' );
 		}
 	}
 }
-add_action( 'wp', '\emrikol\basic_http_auth\http_auth_protect' );
+add_action( 'init', '\emrikol\basic_http_auth\http_auth_protect' );
 
 /**
  * Sanitizes and validates the credentials input from the settings page.
@@ -202,22 +204,34 @@ function clear_cache_on_auth_failure() {
 }
 
 /**
- * Sends an HTTP authentication header and displays an access denied message.
+ * Adds HTTP authentication headers and clears cache on authentication failure.
  *
- * This function is called when a user fails to provide valid credentials or
- * when their authentication cookie is not present or invalid. It sends the
- * 'WWW-Authenticate' and 'HTTP/1.0 401 Unauthorized' headers, and then displays
- * an 'Access denied' message.
+ * This function is used as a hook for 'wp_headers'. It adds the necessary authentication
+ * headers to the HTTP response and clears server-side cache when authentication fails.
+ * It returns an updated array of headers to be sent in the HTTP response.
  *
- * @return void
+ * @param array $headers The current headers to be sent in the HTTP response.
+ *
+ * @return array The modified headers with authentication headers added and cache cleared on authentication failure.
  */
-function authenticate() {
+function authenticate( $headers ) {
 	clear_cache_on_auth_failure();
 
-	header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
-	header( 'HTTP/1.0 401 Unauthorized' );
-	echo 'Access denied';
-	exit;
+	$headers['WWW-Authenticate']          = 'Basic realm="Restricted Area"';
+	$headers['HTTP/1.0 401 Unauthorized'] = true;
+	$headers['Status']                    = '401 Unauthorized';
+
+	return $headers;
+}
+
+/**
+ * Exits the script execution and displays an access denied message.
+ *
+ * This function should be called when HTTP authentication fails.
+ * It stops the script execution to prevent unauthorized users from accessing protected content.
+ */
+function exit_on_auth_failure() {
+	wp_die( 'Access denied', 'Access denied', 401 );
 }
 
 /**
