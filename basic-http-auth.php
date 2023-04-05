@@ -77,6 +77,7 @@ function http_auth_protect() {
 	foreach ( $credentials as $credential ) {
 		list($user, $pass) = explode( ',', $credential );
 		$cookie_value      = md5( $user . $pass );
+		$authenticated     = false;
 
 		// phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___COOKIE
 		if ( isset( $_COOKIE[ $cookie_name ] ) && $_COOKIE[ $cookie_name ] === $cookie_value ) {
@@ -98,11 +99,14 @@ function http_auth_protect() {
 					$cookie_days = intval( get_option( 'http_auth_cookie_days', 30 ) );
 					// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.cookies_setcookie
 					setcookie( $cookie_name, md5( $user . $pass ), time() + ( 86400 * $cookie_days ), '/' );
+					$authenticated = true;
 					break;
 				}
 			}
+		}
 
-			authenticate();
+		if ( ! $authenticated ) {
+			\emrikol\basic_http_auth\authenticate();
 		}
 	}
 }
