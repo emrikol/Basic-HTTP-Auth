@@ -65,7 +65,7 @@ function http_auth_protect() {
 	// Check if the user's IP is within the allowed IP ranges.
 	$user_ip = filter_var( $_SERVER['REMOTE_ADDR'] ?? false, FILTER_VALIDATE_IP ); // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REMOTE_ADDR__, WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders
 
-	if ( \emrikol\basic_http_auth\is_ip_in_ranges( $user_ip, $allowed_ranges ) ) {
+	if ( is_ip_in_ranges( $user_ip, $allowed_ranges ) ) {
 		return;
 	}
 
@@ -89,7 +89,7 @@ function http_auth_protect() {
 	if ( ! $cookie_valid ) {
 		// phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.BasicAuthentication
 		if ( ! isset( $_SERVER['PHP_AUTH_USER'] ) || ! isset( $_SERVER['PHP_AUTH_PW'] ) ) {
-			\emrikol\basic_http_auth\authenticate();
+			authenticate();
 		} else {
 			foreach ( $credentials as $credential ) {
 				list($user, $pass) = explode( ',', $credential );
@@ -106,11 +106,52 @@ function http_auth_protect() {
 		}
 
 		if ( ! $authenticated ) {
-			\emrikol\basic_http_auth\authenticate();
+			authenticate();
 		}
 	}
 }
 add_action( 'wp', '\emrikol\basic_http_auth\http_auth_protect' );
+
+/**
+ * Sanitizes and validates the credentials input from the settings page.
+ *
+ * This function checks if the input format for usernames and passwords is valid and
+ * displays an error message for invalid input. The correct format is 'username,password'.
+ *
+ * @param string $input The raw input from the settings page.
+ *
+ * @return string The sanitized input if valid, an empty string if invalid.
+ */
+function sanitize_http_auth_credentials( $input ) {
+	// Split the input by line.
+	$lines = explode( PHP_EOL, $input );
+
+	$sanitized_lines = array();
+
+	foreach ( $lines as $line ) {
+		$parts = explode( ',', $line );
+
+		// Check if the line has exactly two parts (username and password).
+		if ( count( $parts ) !== 2 ) {
+			add_settings_error(
+				'http_auth_credentials',
+				'invalid_format',
+				'Invalid format: Each line should contain exactly one username and one password, separated by a comma.'
+			);
+			continue;
+		}
+
+		// Add any additional validation checks for usernames and passwords here, e.g., length, allowed characters, etc.
+
+		// Sanitize the username and password.
+		$sanitized_user = sanitize_text_field( $parts[0] );
+		$sanitized_pass = sanitize_text_field( $parts[1] );
+
+		$sanitized_lines[] = $sanitized_user . ',' . $sanitized_pass;
+	}
+
+	return implode( PHP_EOL, $sanitized_lines );
+}
 
 /**
  * Sends an HTTP authentication header and displays an access denied message.
@@ -193,6 +234,6 @@ function http_auth_settings_page() {
  */
 function http_auth_register_settings() {
 	register_setting( 'http-auth-settings', 'http_auth_cookie_days', 'intval' );
-	register_setting( 'http-auth-settings', 'http_auth_credentials', 'sanitize_textarea_field' );
+	register_setting( 'http-auth-settings', 'http_auth_credentials', '\emrikol\basic_http_auth\sanitize_http_auth_credentials' );
 }
 add_action( 'admin_init', '\emrikol\basic_http_auth\http_auth_register_settings' );
