@@ -154,6 +154,30 @@ function sanitize_http_auth_credentials( $input ) {
 }
 
 /**
+ * Adds caching headers to the HTTP response.
+ *
+ * This function adds cache-control, expires, and pragma headers to the HTTP response
+ * to prevent clients from caching the content.
+ *
+ * @param array $headers The current headers to be sent in the HTTP response.
+ *
+ * @return array The modified headers with caching headers added.
+ */
+function add_caching_headers( $headers ) {
+	// Set Cache-Control to no-cache, no-store, must-revalidate.
+	$headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+
+	// Set Expires header to a past date.
+	$headers['Expires'] = 'Mon, 26 Jul 1997 05:00:00 GMT';
+
+	// Set Pragma header to no-cache.
+	$headers['Pragma'] = 'no-cache';
+
+	return $headers;
+}
+add_filter( 'wp_headers', '\emrikol\basic_http_auth\add_caching_headers' );
+
+/**
  * Sends an HTTP authentication header and displays an access denied message.
  *
  * This function is called when a user fails to provide valid credentials or
