@@ -4,7 +4,7 @@ Tags: authentication, http, password, protect, security, cookie
 Requires at least: 4.0
 Tested up to: 5.8
 Requires PHP: 5.6
-Stable tag: 1.0
+Stable tag: 1.1
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,10 +34,18 @@ This plugin uses HTTP authentication, which does not require a custom login page
 
 == Changelog ==
 
+= 1.1 =
+* Refactor authentication flow using WordPress hooks.
+* Improve cache clearing for popular caching plugins.
+* Add caching headers to prevent client-side caching of protected content.
+
 = 1.0 =
 * Initial release.
 
 == Upgrade Notice ==
+
+= 1.1 =
+Refactored authentication flow and improved cache handling. Update recommended for better compatibility and security.
 
 = 1.0 =
 Initial release.
