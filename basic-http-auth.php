@@ -178,6 +178,30 @@ function add_caching_headers( $headers ) {
 add_filter( 'wp_headers', '\emrikol\basic_http_auth\add_caching_headers' );
 
 /**
+ * Clears server-side cache when authentication fails.
+ *
+ * This function checks for popular caching plugins' cache clearing functions and
+ * calls them if they are available to clear the cache when authentication fails.
+ * This ensures that the server-side cache doesn't serve protected content to unauthorized users.
+ */
+function clear_cache_on_auth_failure() {
+	// Batcache.
+	if ( function_exists( 'batcache_cancel' ) ) {
+		batcache_cancel();
+	}
+
+	// WP Super Cache.
+	if ( function_exists( 'wp_cache_clear_cache' ) ) {
+		wp_cache_clear_cache();
+	}
+
+	// W3 Total Cache.
+	if ( function_exists( 'w3tc_flush_all' ) ) {
+		w3tc_flush_all();
+	}
+}
+
+/**
  * Sends an HTTP authentication header and displays an access denied message.
  *
  * This function is called when a user fails to provide valid credentials or
@@ -188,6 +212,8 @@ add_filter( 'wp_headers', '\emrikol\basic_http_auth\add_caching_headers' );
  * @return void
  */
 function authenticate() {
+	clear_cache_on_auth_failure();
+
 	header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
 	header( 'HTTP/1.0 401 Unauthorized' );
 	echo 'Access denied';
