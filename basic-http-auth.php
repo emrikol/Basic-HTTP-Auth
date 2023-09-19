@@ -81,7 +81,13 @@ function http_auth_protect() {
 	$cookie_valid = false;
 
 	foreach ( $credentials as $credential ) {
-		list($user, $pass) = explode( ',', $credential );
+		$parts = explode( ',', $credential );
+
+		if ( 2 !== count( $parts ) ) {
+			continue;
+		}
+
+		list($user, $pass) = $parts;
 		$cookie_value      = md5( $user . $pass );
 		$authenticated     = false;
 
