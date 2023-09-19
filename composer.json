@@ -1,12 +1,19 @@
 {
-    "require-dev": {
-        "automattic/vipwpcs": "^2.3",
-        "dealerdirect/phpcodesniffer-composer-installer": "^0.7.2",
-         "phpcompatibility/phpcompatibility-wp": "^2"
-    },
+    "name": "emrikol/basic-http-auth",
+    "description": "Basic HTTP Auth Plugin for WordPress",
+    "authors": [
+        {
+            "name": "Derrick Tennant",
+            "email": "derrick.tennant@automattic.com"
+        }
+    ],
     "config": {
         "allow-plugins": {
             "dealerdirect/phpcodesniffer-composer-installer": true
         }
+    },
+    "require-dev": {
+        "wp-coding-standards/wpcs": "^3.0",
+        "phpcompatibility/phpcompatibility-wp": "*"
     }
 }

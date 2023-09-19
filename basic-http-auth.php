@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Basic HTTP Auth
  * Description: A simple plugin to password protect your WordPress site using HTTP authentication, cookies, and a settings page.
- * Version: 1.0
+ * Version: 1.2
  * Author: Derrick Tennant
  */
 
@@ -28,7 +28,7 @@ function is_ip_in_ranges( $ip, $ranges ) {
 		$subnet_long         = ip2long( $subnet );
 		$mask                = -1 << ( 32 - $bits );
 
-		if ( ( $long_ip & $mask ) == ( $subnet_long & $mask ) ) {
+		if ( ( $long_ip & $mask ) === ( $subnet_long & $mask ) ) {
 			return true;
 		}
 	}
@@ -69,8 +69,14 @@ function http_auth_protect() {
 		return;
 	}
 
-	$credentials  = get_option( 'http_auth_credentials', '' );
-	$credentials  = explode( PHP_EOL, $credentials );
+	$network_credentials = get_site_option( 'http_auth_network_credentials', '' );
+	$site_credentials    = get_option( 'http_auth_credentials', '' );
+
+	$credentials = array_merge(
+		explode( PHP_EOL, $network_credentials ),
+		explode( PHP_EOL, $site_credentials )
+	);
+
 	$cookie_name  = 'http_auth_cookie';
 	$cookie_valid = false;
 
@@ -109,6 +115,12 @@ function http_auth_protect() {
 		if ( ! $authenticated ) {
 			add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
 			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure' );
+
+			// Disable XML-RPC.
+			add_filter( 'xmlrpc_enabled', '__return_false' );
+
+			// Restrict access to the REST API.
+			add_filter( 'rest_authentication_errors', '\emrikol\basic_http_auth\rest_authenticate' );
 		}
 	}
 }
@@ -301,3 +313,113 @@ function http_auth_register_settings() {
 	register_setting( 'http-auth-settings', 'http_auth_credentials', '\emrikol\basic_http_auth\sanitize_http_auth_credentials' );
 }
 add_action( 'admin_init', '\emrikol\basic_http_auth\http_auth_register_settings' );
+
+/**
+ * Authenticates a user for the REST API.
+ *
+ * This function first checks if there's an error from another authentication method.
+ * If not, it then checks if the current user is authenticated.
+ * If the user is not authenticated, an HTTP basic authentication header is sent and a WP_Error is returned.
+ *
+ * @param mixed $result Error data from another authentication method or null.
+ *
+ * @return mixed Either the passed error data or a new WP_Error instance if the user is not authenticated.
+ */
+function rest_authenticate( $result ) {
+	// Pass through the error from another authentication method.
+	if ( ! empty( $result ) ) {
+		return $result;
+	}
+
+	// Check if the current user is authenticated.
+	if ( ! is_user_logged_in() ) {
+		// Require HTTP authentication for the REST API.
+		header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
+		return new \WP_Error( 'rest_unauthorized', 'Access denied', array( 'status' => 401 ) );
+	}
+
+	return $result;
+}
+
+/**
+ * Adds the Network HTTP Authentication settings submenu to the WordPress network admin menu.
+ *
+ * This function registers a new submenu under the "Settings" menu in the WordPress network admin.
+ * The submenu leads to the `http_auth_network_settings_page` which is used to manage network-level
+ * HTTP authentication credentials.
+ *
+ * @return void
+ */
+function http_auth_network_settings_menu() {
+	add_submenu_page(
+		'settings.php',
+		'Network HTTP Authentication Settings',
+		'Network HTTP Authentication',
+		'manage_network_options',
+		'http-auth-network-settings',
+		'\emrikol\basic_http_auth\http_auth_network_settings_page'
+	);
+}
+add_action( 'network_admin_menu', '\emrikol\basic_http_auth\http_auth_network_settings_menu' );
+
+/**
+ * Renders the Network HTTP Authentication settings page in the WordPress network admin.
+ *
+ * This function displays the form to manage network-level HTTP authentication credentials.
+ * It provides fields to input the credentials with one username-password pair per line, separated by commas.
+ * The form submission is handled by the `update_network_http_auth` function.
+ *
+ * @return void
+ */
+function http_auth_network_settings_page() {
+	?>
+	<div class="wrap">
+		<h1>Network HTTP Authentication Settings</h1>
+		<form method="post" action="edit.php?action=update_network_http_auth">
+			<?php
+				wp_nonce_field( 'http_auth_network_options' );
+				$credentials = get_site_option( 'http_auth_network_credentials', '' );
+			?>
+			<table class="form-table">
+				<tr valign="top">
+					<th scope="row">
+						<p>Network Usernames and Passwords. One per line, comma separated.</p>
+						<p>Example: <code>username,password</code></p>
+					</th>
+					<td><textarea rows="5" cols="50" name="http_auth_network_credentials"><?php echo esc_textarea( $credentials ); ?></textarea></td>
+				</tr>
+			</table>
+			<?php submit_button(); ?>
+		</form>
+	</div>
+	<?php
+}
+
+/**
+ * Updates the network-level HTTP authentication credentials.
+ *
+ * This function handles the form submission from the network settings page.
+ * It checks the nonce for security and then updates the site option with
+ * the provided credentials. After updating, it redirects back to the settings page.
+ *
+ * @return void
+ */
+function update_network_http_auth() {
+	if ( isset( $_POST['_wpnonce'] ) && wp_verify_nonce( $_POST['_wpnonce'], 'http_auth_network_options' ) ) {
+		$credentials = sanitize_textarea_field( $_POST['http_auth_network_credentials'] ?? '' );
+		update_site_option( 'http_auth_network_credentials', $credentials );
+	}
+
+	wp_safe_redirect(
+		add_query_arg(
+			array(
+				'page'    => 'http-auth-network-settings',
+				'updated' => 'true',
+			),
+			network_admin_url( 'settings.php' )
+		)
+	);
+	exit;
+}
+add_action( 'network_admin_edit_update_network_http_auth', '\emrikol\basic_http_auth\update_network_http_auth' );
+
