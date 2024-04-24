@@ -37,6 +37,61 @@ function is_ip_in_ranges( $ip, $ranges ) {
 }
 
 /**
+ * Fetches and caches Jetpack IPs.
+ *
+ * This function fetches the Jetpack IPs from a JSON file hosted on the Jetpack website.
+ * The IPs are cached in the WordPress options table and are updated once a week or if the cache is empty.
+ *
+ * @return array An array of Jetpack IPs.
+ */
+function get_jetpack_ips() {
+    // URL of the JSON file containing the Jetpack IPs.
+    $jetpack_json_url = 'https://jetpack.com/ips-v4.json';
+
+    // Initialize an empty array to store the IPs.
+    $jetpack_ips = array();
+
+    // Try to get the cached IPs from the options table.
+    $jetpack_ip_data = get_option( 'jetpack-ips', array() );
+
+    // If there's no cached data, fetch it.
+    if ( array() === $jetpack_ip_data ) {
+        $jetpack_updated_ips = file_get_contents( $jetpack_json_url );
+
+        // If the fetch was successful, decode the JSON and update the cache.
+        if ( false !== $jetpack_updated_ips ) {
+            $jetpack_ips = json_decode( $jetpack_updated_ips, true );
+            update_option( 'jetpack-ips', array( 'last-fetch' => date( 'Y-m-d' ), 'ips' => $jetpack_ips ), false );
+        } else {
+            // Handle the error when the fetch fails.
+            error_log( 'Failed to fetch Jetpack IPs.' );
+        }
+    }
+
+    // If the cache is more than a week old, fetch the data again.
+    if ( isset( $jetpack_ip_data['last-fetch'] ) && (time() - strtotime( $jetpack_ip_data['last-fetch'] ) > DAY_IN_SECONDS * 7) ) {
+        $jetpack_updated_ips = file_get_contents( $jetpack_json_url );
+
+        // If the fetch was successful, decode the JSON and update the cache.
+        if ( false !== $jetpack_updated_ips ) {
+            $jetpack_ips = json_decode( $jetpack_updated_ips, true );
+            update_option( 'jetpack-ips', array( 'last-fetch' => date( 'Y-m-d' ), 'ips' => $jetpack_ips ), false );
+        } else {
+            // Handle the error when the fetch fails.
+            error_log( 'Failed to fetch Jetpack IPs.' );
+        }
+    }
+
+    // If the cache is not empty, use the cached IPs.
+    if ( isset( $jetpack_ip_data['ips'] ) ) {
+        $jetpack_ips = $jetpack_ip_data['ips'];
+    }
+
+    // Return the IPs as an array.
+    return (array) $jetpack_ips;
+}
+
+/**
  * Protects the WordPress site using HTTP authentication and cookies.
  *
  * This function checks the user's cookies and HTTP authentication credentials against the
@@ -422,4 +477,3 @@ function update_network_http_auth() {
 	exit;
 }
 add_action( 'network_admin_edit_update_network_http_auth', '\emrikol\basic_http_auth\update_network_http_auth' );
-
