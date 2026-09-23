@@ -102,7 +102,10 @@ function http_auth_protect() {
 		// phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.BasicAuthentication
 		if ( ! isset( $_SERVER['PHP_AUTH_USER'] ) || ! isset( $_SERVER['PHP_AUTH_PW'] ) ) {
 			add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
-			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure' );
+			// Run first on template_redirect. Core renders sitemaps and canonical
+			// redirects on this hook at the default priority, and both would print
+			// protected URLs before a later exit.
+			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure', PHP_INT_MIN );
 		} else {
 			foreach ( $credentials as $credential ) {
 				list($user, $pass) = explode( ',', $credential );
@@ -120,7 +123,7 @@ function http_auth_protect() {
 
 		if ( ! $authenticated ) {
 			add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
-			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure' );
+			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure', PHP_INT_MIN );
 
 			// Disable XML-RPC.
 			add_filter( 'xmlrpc_enabled', '__return_false' );
