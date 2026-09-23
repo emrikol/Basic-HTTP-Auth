@@ -89,7 +89,6 @@ function http_auth_protect() {
 
 		list($user, $pass) = $parts;
 		$cookie_value      = md5( $user . $pass );
-		$authenticated     = false;
 
 		// phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___COOKIE
 		if ( isset( $_COOKIE[ $cookie_name ] ) && $_COOKIE[ $cookie_name ] === $cookie_value ) {
@@ -98,40 +97,56 @@ function http_auth_protect() {
 		}
 	}
 
-	if ( ! $cookie_valid ) {
-		// phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.BasicAuthentication
-		if ( ! isset( $_SERVER['PHP_AUTH_USER'] ) || ! isset( $_SERVER['PHP_AUTH_PW'] ) ) {
-			add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
-			// Run first on template_redirect. Core renders sitemaps and canonical
-			// redirects on this hook at the default priority, and both would print
-			// protected URLs before a later exit.
-			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure', PHP_INT_MIN );
-		} else {
-			foreach ( $credentials as $credential ) {
-				list($user, $pass) = explode( ',', $credential );
+	if ( $cookie_valid ) {
+		return;
+	}
 
-				// phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.BasicAuthentication
-				if ( $_SERVER['PHP_AUTH_USER'] === $user && $_SERVER['PHP_AUTH_PW'] === $pass ) {
-					$cookie_days = intval( get_option( 'http_auth_cookie_days', 30 ) );
-					// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.cookies_setcookie
-					setcookie( $cookie_name, md5( $user . $pass ), time() + ( 86400 * $cookie_days ), '/' );
-					$authenticated = true;
-					break;
-				}
+	$authenticated = false;
+
+	// phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.BasicAuthentication
+	if ( isset( $_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW'] ) ) {
+		foreach ( $credentials as $credential ) {
+			$parts = explode( ',', $credential );
+
+			if ( 2 !== count( $parts ) ) {
+				continue;
+			}
+
+			list($user, $pass) = $parts;
+
+			// phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.BasicAuthentication
+			if ( $_SERVER['PHP_AUTH_USER'] === $user && $_SERVER['PHP_AUTH_PW'] === $pass ) {
+				$cookie_days = intval( get_option( 'http_auth_cookie_days', 30 ) );
+				// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.cookies_setcookie
+				setcookie( $cookie_name, md5( $user . $pass ), time() + ( 86400 * $cookie_days ), '/' );
+				$authenticated = true;
+				break;
 			}
 		}
-
-		if ( ! $authenticated ) {
-			add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
-			add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure', PHP_INT_MIN );
-
-			// Disable XML-RPC.
-			add_filter( 'xmlrpc_enabled', '__return_false' );
-
-			// Restrict access to the REST API.
-			add_filter( 'rest_authentication_errors', '\emrikol\basic_http_auth\rest_authenticate' );
-		}
 	}
+
+	if ( $authenticated ) {
+		return;
+	}
+
+	add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
+
+	// Run first on template_redirect. Core renders sitemaps and canonical
+	// redirects on this hook at the default priority, and both would print
+	// protected URLs before a later exit.
+	add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure', PHP_INT_MIN );
+
+	// admin-ajax.php and wp-comments-post.php never fire template_redirect, so
+	// they need their own exits.
+	add_action( 'admin_init', '\emrikol\basic_http_auth\ajax_authenticate', PHP_INT_MIN );
+	add_action( 'pre_comment_on_post', '\emrikol\basic_http_auth\exit_on_auth_failure', PHP_INT_MIN );
+
+	// Disable XML-RPC.
+	add_filter( 'xmlrpc_enabled', '__return_false' );
+	add_filter( 'xmlrpc_methods', '\emrikol\basic_http_auth\remove_pingback_methods' );
+
+	// Restrict access to the REST API.
+	add_filter( 'rest_authentication_errors', '\emrikol\basic_http_auth\rest_authenticate' );
 }
 add_action( 'init', '\emrikol\basic_http_auth\http_auth_protect' );
 
@@ -432,3 +447,37 @@ function update_network_http_auth() {
 }
 add_action( 'network_admin_edit_update_network_http_auth', '\emrikol\basic_http_auth\update_network_http_auth' );
 
+/**
+ * Blocks unauthenticated AJAX requests.
+ *
+ * admin-ajax.php runs wp_ajax_nopriv_* actions for anonymous visitors and never
+ * fires template_redirect. Logged-in users pass, since WordPress has already
+ * authenticated them.
+ *
+ * This runs on admin_init rather than init: calling is_user_logged_in() on
+ * init would fix the current user before a REST request is known to be one,
+ * which stops Application Passwords from working.
+ *
+ * @return void
+ */
+function ajax_authenticate() {
+	if ( wp_doing_ajax() && ! is_user_logged_in() ) {
+		exit_on_auth_failure();
+	}
+}
+
+/**
+ * Removes the XML-RPC pingback methods.
+ *
+ * xmlrpc_enabled only turns off the methods that need a login. Pingbacks need
+ * none, so anonymous visitors could still use them.
+ *
+ * @param array $methods XML-RPC methods, keyed by method name.
+ *
+ * @return array The methods without the pingback methods.
+ */
+function remove_pingback_methods( $methods ) {
+	unset( $methods['pingback.ping'], $methods['pingback.extensions.getPingbacks'] );
+
+	return $methods;
+}
