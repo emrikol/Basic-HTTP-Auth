@@ -6,6 +6,8 @@
  * Author: Derrick Tennant
  */
 
+declare(strict_types=1);
+
 namespace emrikol\basic_http_auth;
 
 /**
@@ -20,7 +22,7 @@ namespace emrikol\basic_http_auth;
  *
  * @return bool True if the IP address is within any of the ranges, false otherwise.
  */
-function is_ip_in_ranges( $ip, $ranges ) {
+function is_ip_in_ranges( string $ip, array $ranges ): bool {
 	$long_ip = ip2long( $ip );
 
 	foreach ( $ranges as $range ) {
@@ -50,7 +52,7 @@ function is_ip_in_ranges( $ip, $ranges ) {
  *
  * @return void
  */
-function http_auth_protect() {
+function http_auth_protect(): void {
 	// Allow Jetpack IPs: https://jetpack.com/support/how-to-add-jetpack-ips-allowlist/ may need updated in the future.
 	$allowed_ranges = array(
 		'122.248.245.244/32',
@@ -65,7 +67,8 @@ function http_auth_protect() {
 	// Check if the user's IP is within the allowed IP ranges.
 	$user_ip = filter_var( $_SERVER['REMOTE_ADDR'] ?? false, FILTER_VALIDATE_IP ); // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REMOTE_ADDR__, WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders
 
-	if ( is_ip_in_ranges( $user_ip, $allowed_ranges ) ) {
+	// filter_var() returns false without a valid address, as under WP-CLI.
+	if ( false !== $user_ip && is_ip_in_ranges( $user_ip, $allowed_ranges ) ) {
 		return;
 	}
 
@@ -131,13 +134,17 @@ function http_auth_protect() {
 
 	add_filter( 'wp_headers', '\emrikol\basic_http_auth\authenticate', 1 );
 
-	// Run first on template_redirect. Core renders sitemaps and canonical
-	// redirects on this hook at the default priority, and both would print
-	// protected URLs before a later exit.
+	/*
+	 * Run first on template_redirect. Core renders sitemaps and canonical
+	 * redirects on this hook at the default priority, and both would print
+	 * protected URLs before a later exit.
+	 */
 	add_action( 'template_redirect', '\emrikol\basic_http_auth\exit_on_auth_failure', PHP_INT_MIN );
 
-	// admin-ajax.php and wp-comments-post.php never fire template_redirect, so
-	// they need their own exits.
+	/*
+	 * admin-ajax.php and wp-comments-post.php never fire template_redirect, so
+	 * they need their own exits.
+	 */
 	add_action( 'admin_init', '\emrikol\basic_http_auth\ajax_authenticate', PHP_INT_MIN );
 	add_action( 'pre_comment_on_post', '\emrikol\basic_http_auth\exit_on_auth_failure', PHP_INT_MIN );
 
@@ -160,7 +167,7 @@ add_action( 'init', '\emrikol\basic_http_auth\http_auth_protect' );
  *
  * @return string The sanitized input if valid, an empty string if invalid.
  */
-function sanitize_http_auth_credentials( $input ) {
+function sanitize_http_auth_credentials( string $input ): string {
 	// Split the input by line.
 	$lines = explode( PHP_EOL, $input );
 
@@ -201,7 +208,7 @@ function sanitize_http_auth_credentials( $input ) {
  *
  * @return array The modified headers with caching headers added.
  */
-function add_caching_headers( $headers ) {
+function add_caching_headers( array $headers ): array {
 	// Set Cache-Control to no-cache, no-store, must-revalidate.
 	$headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
 
@@ -221,8 +228,10 @@ add_filter( 'wp_headers', '\emrikol\basic_http_auth\add_caching_headers' );
  * This function checks for popular caching plugins' cache clearing functions and
  * calls them if they are available to clear the cache when authentication fails.
  * This ensures that the server-side cache doesn't serve protected content to unauthorized users.
+ *
+ * @return void
  */
-function clear_cache_on_auth_failure() {
+function clear_cache_on_auth_failure(): void {
 	// Batcache.
 	if ( function_exists( 'batcache_cancel' ) ) {
 		batcache_cancel();
@@ -250,7 +259,7 @@ function clear_cache_on_auth_failure() {
  *
  * @return array The modified headers with authentication headers added and cache cleared on authentication failure.
  */
-function authenticate( $headers ) {
+function authenticate( array $headers ): array {
 	clear_cache_on_auth_failure();
 
 	$headers['WWW-Authenticate']          = 'Basic realm="Restricted Area"';
@@ -265,8 +274,10 @@ function authenticate( $headers ) {
  *
  * This function should be called when HTTP authentication fails.
  * It stops the script execution to prevent unauthorized users from accessing protected content.
+ *
+ * @return void
  */
-function exit_on_auth_failure() {
+function exit_on_auth_failure(): void {
 	wp_die( 'Access denied', 'Access denied', 401 );
 }
 
@@ -279,7 +290,7 @@ function exit_on_auth_failure() {
  *
  * @return void
  */
-function http_auth_settings_menu() {
+function http_auth_settings_menu(): void {
 	add_options_page( 'HTTP Authentication Settings', 'HTTP Authentication', 'manage_options', 'http-auth-settings', '\emrikol\basic_http_auth\http_auth_settings_page' );
 }
 add_action( 'admin_menu', '\emrikol\basic_http_auth\http_auth_settings_menu' );
@@ -293,7 +304,7 @@ add_action( 'admin_menu', '\emrikol\basic_http_auth\http_auth_settings_menu' );
  *
  * @return void
  */
-function http_auth_settings_page() {
+function http_auth_settings_page(): void {
 	?>
 	<div class="wrap">
 		<h1>HTTP Authentication Settings</h1>
@@ -332,7 +343,7 @@ function http_auth_settings_page() {
  *
  * @return void
  */
-function http_auth_register_settings() {
+function http_auth_register_settings(): void {
 	register_setting( 'http-auth-settings', 'http_auth_cookie_days', 'intval' );
 	register_setting( 'http-auth-settings', 'http_auth_credentials', '\emrikol\basic_http_auth\sanitize_http_auth_credentials' );
 }
@@ -345,11 +356,11 @@ add_action( 'admin_init', '\emrikol\basic_http_auth\http_auth_register_settings'
  * If not, it then checks if the current user is authenticated.
  * If the user is not authenticated, an HTTP basic authentication header is sent and a WP_Error is returned.
  *
- * @param mixed $result Error data from another authentication method or null.
+ * @param \WP_Error|bool|null $result Error data from another authentication method, true for a success, or null.
  *
- * @return mixed Either the passed error data or a new WP_Error instance if the user is not authenticated.
+ * @return \WP_Error|bool|null Either the passed result or a new WP_Error instance if the user is not authenticated.
  */
-function rest_authenticate( $result ) {
+function rest_authenticate( \WP_Error|bool|null $result ): \WP_Error|bool|null {
 	// Pass through the error from another authentication method.
 	if ( ! empty( $result ) ) {
 		return $result;
@@ -374,7 +385,7 @@ function rest_authenticate( $result ) {
  *
  * @return void
  */
-function http_auth_network_settings_menu() {
+function http_auth_network_settings_menu(): void {
 	add_submenu_page(
 		'settings.php',
 		'Network HTTP Authentication Settings',
@@ -395,7 +406,7 @@ add_action( 'network_admin_menu', '\emrikol\basic_http_auth\http_auth_network_se
  *
  * @return void
  */
-function http_auth_network_settings_page() {
+function http_auth_network_settings_page(): void {
 	?>
 	<div class="wrap">
 		<h1>Network HTTP Authentication Settings</h1>
@@ -428,7 +439,7 @@ function http_auth_network_settings_page() {
  *
  * @return void
  */
-function update_network_http_auth() {
+function update_network_http_auth(): void {
 	if ( isset( $_POST['_wpnonce'] ) && wp_verify_nonce( $_POST['_wpnonce'], 'http_auth_network_options' ) ) {
 		$credentials = sanitize_textarea_field( $_POST['http_auth_network_credentials'] ?? '' );
 		update_site_option( 'http_auth_network_credentials', $credentials );
@@ -450,8 +461,8 @@ add_action( 'network_admin_edit_update_network_http_auth', '\emrikol\basic_http_
 /**
  * Blocks unauthenticated AJAX requests.
  *
- * admin-ajax.php runs wp_ajax_nopriv_* actions for anonymous visitors and never
- * fires template_redirect. Logged-in users pass, since WordPress has already
+ * The admin-ajax.php script runs wp_ajax_nopriv_* actions for anonymous visitors
+ * and never fires template_redirect. Logged-in users pass, since WordPress has already
  * authenticated them.
  *
  * This runs on admin_init rather than init: calling is_user_logged_in() on
@@ -460,7 +471,7 @@ add_action( 'network_admin_edit_update_network_http_auth', '\emrikol\basic_http_
  *
  * @return void
  */
-function ajax_authenticate() {
+function ajax_authenticate(): void {
 	if ( wp_doing_ajax() && ! is_user_logged_in() ) {
 		exit_on_auth_failure();
 	}
@@ -469,14 +480,14 @@ function ajax_authenticate() {
 /**
  * Removes the XML-RPC pingback methods.
  *
- * xmlrpc_enabled only turns off the methods that need a login. Pingbacks need
- * none, so anonymous visitors could still use them.
+ * The xmlrpc_enabled filter only turns off the methods that need a login.
+ * Pingbacks need none, so anonymous visitors could still use them.
  *
  * @param array $methods XML-RPC methods, keyed by method name.
  *
  * @return array The methods without the pingback methods.
  */
-function remove_pingback_methods( $methods ) {
+function remove_pingback_methods( array $methods ): array {
 	unset( $methods['pingback.ping'], $methods['pingback.extensions.getPingbacks'] );
 
 	return $methods;
